@@ -1,0 +1,9 @@
+{
+  "/start": "/start",
+  "/exit": "/start",
+  "live_chats": "/live_chats",
+  "delete_chats": "/delete_chats",
+
+  "task_description" : "/task_description",
+  "back_to_main_menu_button": "/start"
+}
