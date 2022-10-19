@@ -1,4 +1,37 @@
 version: '3.9'
+services:
+  psql:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: middleware_db
+      POSTGRES_USER: midwr
+      POSTGRES_PASSWORD: 12987wq
+    volumes:
+      - /tmp:/var/lib/postgresql/data2
+    ports:
+      - "6543:5432"
+
+  cache:
+    image: redis:6.2-alpine
+    environment:
+      REDIS_HOST: cache
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: eYVX7EwVmmxKPCDmwMtyKVge8oLd2t81
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning --requirepass eYVX7EwVmmxKPCDmwMtyKVge8oLd2t81
+#    volumes:
+#      - /cache:/data
+
+  golang:
+    build: .
+    container_name: golang
+    restart: always
+    depends_on:
+      - psql
+      - cache
+
 
 
 

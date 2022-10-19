@@ -5,6 +5,7 @@ import (
 	"github.com/BlackRRR/middleware-bot/internal/app/repository"
 	"github.com/BlackRRR/middleware-bot/internal/app/services/bot"
 	"github.com/BlackRRR/middleware-bot/internal/app/services/layers"
+	"github.com/BlackRRR/middleware-bot/internal/config"
 	"github.com/BlackRRR/middleware-bot/internal/db/redis"
 	"github.com/bots-empire/base-bot/msgs"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -15,8 +16,8 @@ type Services struct {
 	BotSrv *bot.BotService
 }
 
-func InitServices(repo *repository.Repository, msgsSrv *msgs.Service, globalBot *model.GlobalBot) *Services {
-	botSrv := bot.NewBotService(repo, msgsSrv, model.Bot)
+func InitServices(repo *repository.Repository, msgsSrv *msgs.Service, globalBot *model.GlobalBot, server *config.Server) *Services {
+	botSrv := bot.NewBotService(repo, msgsSrv, globalBot, server)
 
 	globalBot.MessageHandler = newMessagesHandler(botSrv)
 	globalBot.CallbackHandler = newCallbackHandler(botSrv)

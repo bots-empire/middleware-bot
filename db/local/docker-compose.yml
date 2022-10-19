@@ -6,7 +6,8 @@ services:
       POSTGRES_DB: middleware_db
       POSTGRES_USER: midwr
       POSTGRES_PASSWORD: 12987wq
+#      PGDATA: "/var/lib/postgresql/data"
     volumes:
-      - /tmp:/var/lib/postgresql/data
+      - /tmp:/var/lib/postgresql/data2
     ports:
-      - "8080:8080"
+      - "6543:5432"

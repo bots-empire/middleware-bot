@@ -6,6 +6,7 @@ import (
 	model "github.com/BlackRRR/middleware-bot/internal/app/model"
 	"github.com/BlackRRR/middleware-bot/internal/app/repository"
 	"github.com/BlackRRR/middleware-bot/internal/app/utils"
+	"github.com/BlackRRR/middleware-bot/internal/config"
 	"github.com/BlackRRR/middleware-bot/internal/db/redis"
 	"github.com/BlackRRR/middleware-bot/internal/log"
 	"github.com/bots-empire/base-bot/msgs"
@@ -25,10 +26,11 @@ type BotService struct {
 	Repo       *repository.Repository
 	BaseBotSrv *msgs.Service
 	GlobalBot  *model.GlobalBot
+	Server     *config.Server
 }
 
-func NewBotService(repo *repository.Repository, msgsSrv *msgs.Service, bot *model.GlobalBot) *BotService {
-	return &BotService{Repo: repo, BaseBotSrv: msgsSrv, GlobalBot: bot}
+func NewBotService(repo *repository.Repository, msgsSrv *msgs.Service, bot *model.GlobalBot, server *config.Server) *BotService {
+	return &BotService{Repo: repo, BaseBotSrv: msgsSrv, GlobalBot: bot, Server: server}
 }
 
 func (b *BotService) checkCallbackQuery(s *model.Situation, logger log.Logger) {
@@ -73,10 +75,6 @@ func (b *BotService) checkUpdate(update *tgbotapi.Update, logger log.Logger, sor
 			logger.Warn("err with check user: %s", err.Error())
 			return
 		}
-		//
-		//isAdmin := b.CheckAdmin(user.ID, logger)
-		//
-		//b.StartAnonymousChat(isAdmin, user, logger, update)
 
 		situation := createSituationFromMsg(b.GlobalBot.BotLang, update.Message, user)
 
@@ -95,43 +93,6 @@ func (b *BotService) checkUpdate(update *tgbotapi.Update, logger log.Logger, sor
 		b.checkCallbackQuery(situation, logger)
 		return
 	}
-}
-
-func (b *BotService) StartAnonymousChat(isAdmin bool, user *model.User, logger log.Logger, update *tgbotapi.Update) {
-	if isAdmin {
-		id, chatStart, err := b.Repo.MessageToUser(user.ID)
-		if err != nil {
-			logger.Warn("err with get id and chat start to user: %s", err.Error())
-		}
-
-		if chatStart {
-			err := b.BaseBotSrv.NewParseMessage(id, update.Message.Text)
-			if err != nil {
-				logger.Warn("err with parse message to user: %s", err.Error())
-			}
-		}
-	} else {
-		id, chatStart, err := b.Repo.MessageToAdmin(user.ID)
-		if err != nil {
-			logger.Warn("err with get id and chat start to admin: %s", err.Error())
-		}
-
-		if chatStart {
-			err := b.BaseBotSrv.NewParseMessage(id, update.Message.Text)
-			if err != nil {
-				logger.Warn("err with parse message to user: %s", err.Error())
-			}
-		}
-	}
-}
-
-func (b *BotService) CheckAdmin(id int64, logger log.Logger) bool {
-	isAdmin, err := b.Repo.GetAdmin(id)
-	if err != nil {
-		logger.Warn("err with check admin: %s", err.Error())
-	}
-
-	return isAdmin
 }
 
 func (b *BotService) printNewUpdate(update *tgbotapi.Update, logger log.Logger) {
@@ -208,7 +169,7 @@ func (b *BotService) checkMessage(situation *model.Situation, logger log.Logger,
 	}
 
 	if situation.Err == nil {
-		handler := model.Bot.MessageHandler.
+		handler := b.GlobalBot.MessageHandler.
 			GetHandler(situation.Command)
 
 		if handler != nil {
@@ -229,7 +190,7 @@ func (b *BotService) checkMessage(situation *model.Situation, logger log.Logger,
 
 	situation.Command = strings.Split(situation.Params.Level, "?")[0]
 
-	handler := model.Bot.MessageHandler.
+	handler := b.GlobalBot.MessageHandler.
 		GetHandler(situation.Command)
 
 	if handler != nil {

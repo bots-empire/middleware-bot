@@ -17,7 +17,6 @@ func (h *MessagesHandlers) GetHandler(command string) model.Handler {
 func (h *MessagesHandlers) Init() {
 	//Start command
 	h.OnCommand("/start", h.BotService.StartCommand)
-	h.OnCommand("/start_chat", h.BotService.StartChat)
 	h.OnCommand("/answer", h.BotService.AnswerToUser)
 	h.OnCommand("/question_to_admin", h.BotService.QuestionAdmin)
 	h.OnCommand("/live_chats", h.BotService.LiveChats)

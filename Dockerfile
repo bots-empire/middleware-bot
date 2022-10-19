@@ -4,6 +4,6 @@ WORKDIR /middleware-bot
 
 COPY . .
 
-RUN go build ./cmd/middleware-services
+RUN go build ./cmd/middleware-bot
 
-CMD["./cmd/middleware-bot"]
+CMD ["./middleware-bot"]

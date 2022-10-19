@@ -1,0 +1,27 @@
+{
+  "start_text": "To start using the bot type /start",
+  "call_admin": "Press ⤵ to start a chat",
+  "chat_started_user" : "Support has joined",
+  "chat_started_admin" : "chat number %d started to write",
+  "write_answer": "User %s called you to join the chat press ⤵",
+  "call": "Call a support",
+  "admin_called": "Support called please wait...",
+  "different_admin": "Another support is already chatting with this user",
+  "msg_to_admin": "Username: %s\nMessage: %s",
+
+  "user_msg_dont_recognize": "Type /start to create a task",
+  "user_level_not_defined": "Type /start to create a task",
+  "not_admin": "To create a task type /start",
+  "waiting_admin": "Supports called to wait...",
+  "call_admin_accept" : "Confirm support call",
+  "start_chat_with_user": "Start Chat",
+  "write_answer_to_user": "Chat number %d with user started remember the number to switch between chats, to answer the user type⤵",
+  "chat_number": "%d",
+  "live_chats" : "Select which chat you want to switch to",
+  "chat_selected": "Chat number %s selected",
+  "delete_chat": "Which chat do you want to delete",
+  "chat_deleted": "Chat number %d has been stopped",
+  "delete_chats": "Select which chat you want to delete",
+  "delete_chat_num": "Select a chat to delete",
+  "chat_ended_user": "Chat Ended"
+}

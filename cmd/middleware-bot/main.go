@@ -23,31 +23,30 @@ func main() {
 	log.PrintLogo("Middleware Bot", []string{"8000FF"})
 
 	//Init Config
-	cfg, err := config.InitConfig()
+	cfg, dbConn, err := config.InitConfig()
 	if err != nil {
 		log2.Fatal(err)
 	}
 
 	//Init Database
-	pool, err := db.InitDB(cfg.PGConn)
+	pool, err := db.InitDB(cfg.PGConn, dbConn)
 	if err != nil {
 		log2.Fatal(err)
 	}
 
 	//init bots config
 	srvs := make([]*services.Services, 0)
-	for i := range cfg.Token {
-		globalBot := model.FillBotsConfig(cfg.Token[i], cfg.BotLink, cfg.BotLang)
+	for i := range cfg.TGConfig {
+		globalBot := model.FillBotsConfig(cfg.TGConfig[i].Token, cfg.TGConfig[i].BotLink, cfg.TGConfig[i].BotLang)
 
 		//init msgs service
-		msgsSrv := msgs.NewService(globalBot, []int64{})
+		msgsSrv := msgs.NewService(globalBot, []int64{872383555, 1418862576})
 
 		//Init Repository
 		repo := repository.NewRepository(pool, msgsSrv, globalBot)
 
 		//Init Services
-		initServices := services.InitServices(repo, msgsSrv, globalBot)
-
+		initServices := services.InitServices(repo, msgsSrv, globalBot, cfg.Server)
 		srvs = append(srvs, initServices)
 	}
 
@@ -58,7 +57,7 @@ func main() {
 
 		service.BotSrv.BaseBotSrv.SendNotificationToDeveloper("Bot are restart", false)
 
-		logger.Ok("All handlers are running")
+		logger.Ok("service are running")
 	}
 
 	sig := <-subscribeToSystemSignals()

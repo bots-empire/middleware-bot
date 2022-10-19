@@ -17,8 +17,8 @@ func (h *CallBackHandlers) GetHandler(command string) model.Handler {
 func (h *CallBackHandlers) Init() {
 	//Money command
 	h.OnCommand("/call_admin", h.BotService.CallAdmin)
-	h.OnCommand("/write_to_user", h.BotService.WriteToUser)
-	h.OnCommand("/delete_chat", h.BotService.DeleteChat)
+	h.OnCommand("/start_chat", h.BotService.StartChat)
+	h.OnCommand("/chat_delete", h.BotService.DeleteChat)
 	h.OnCommand("/chat_number", h.BotService.SelectChat)
 }
 
