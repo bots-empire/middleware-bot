@@ -21,6 +21,7 @@ func (h *MessagesHandlers) Init() {
 	h.OnCommand("/question_to_admin", h.BotService.QuestionAdmin)
 	h.OnCommand("/live_chats", h.BotService.LiveChats)
 	h.OnCommand("/delete_chats", h.BotService.EndingChat)
+	h.OnCommand("/chat_info", h.BotService.InfoChatLists)
 }
 
 func (h *MessagesHandlers) OnCommand(command string, handler model.Handler) {

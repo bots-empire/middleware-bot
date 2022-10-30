@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	model2 "github.com/BlackRRR/middleware-bot/internal/app/model"
+	"github.com/BlackRRR/middleware-bot/internal/app/model"
 	"github.com/bots-empire/base-bot/msgs"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v4"
@@ -12,18 +12,18 @@ import (
 
 type Repository struct {
 	Pool      *pgxpool.Pool
-	globalBot *model2.GlobalBot
+	globalBot *model.GlobalBot
 	msgs      *msgs.Service
 	ctx       context.Context
 }
 
-func NewRepository(pool *pgxpool.Pool, msgs *msgs.Service, globalBot *model2.GlobalBot) *Repository {
+func NewRepository(pool *pgxpool.Pool, msgs *msgs.Service, globalBot *model.GlobalBot) *Repository {
 	return &Repository{pool, globalBot, msgs, context.Background()}
 }
 
-func (r *Repository) CheckingTheUser(message *tgbotapi.Message) (*model2.User, error) {
+func (r *Repository) CheckingTheUser(message *tgbotapi.Message) (*model.User, error) {
 	rows, err := r.Pool.Query(r.ctx, `
-SELECT id FROM middleware.users 
+SELECT id, user_name FROM middleware.users 
 	WHERE id = $1;`,
 		message.From.ID)
 	if err != nil {
@@ -45,12 +45,22 @@ SELECT id FROM middleware.users
 	case 1:
 		return users[0], nil
 	default:
-		return nil, model2.ErrFoundTwoUsers
+		return nil, model.ErrFoundTwoUsers
 	}
 }
 
-func (r *Repository) addNewUser(u *model2.User) error {
-	_, err := r.Pool.Exec(r.ctx, `INSERT INTO middleware.users VALUES ($1);`, u.ID)
+func (r *Repository) GetUserName(userID int64) (string, error) {
+	var userName string
+	err := r.Pool.QueryRow(r.ctx, "SELECT user_name FROM middleware.users WHERE id = $1", userID).Scan(&userName)
+	if err != nil {
+		return "", err
+	}
+
+	return userName, nil
+}
+
+func (r *Repository) addNewUser(u *model.User) error {
+	_, err := r.Pool.Exec(r.ctx, `INSERT INTO middleware.users VALUES ($1,$2);`, u.ID, u.UserName)
 	if err != nil {
 		return errors.Wrap(err, "insert new user")
 	}
@@ -60,13 +70,20 @@ func (r *Repository) addNewUser(u *model2.User) error {
 	return nil
 }
 
-func createSimpleUser(message *tgbotapi.Message) *model2.User {
-	return &model2.User{
+func createSimpleUser(message *tgbotapi.Message) *model.User {
+	if message.From.UserName != "" {
+		return &model.User{
+			ID:       message.From.ID,
+			UserName: message.From.UserName,
+		}
+	}
+
+	return &model.User{
 		ID: message.From.ID,
 	}
 }
 
-func (r *Repository) GetUser(id int64) (*model2.User, error) {
+func (r *Repository) GetUser(id int64) (*model.User, error) {
 	rows, err := r.Pool.Query(r.ctx, `
 SELECT * FROM middleware.users
 	WHERE id = $1;`,
@@ -77,22 +94,23 @@ SELECT * FROM middleware.users
 
 	users, err := ReadUsers(rows)
 	if err != nil || len(users) == 0 {
-		return nil, model2.ErrUserNotFound
+		return nil, model.ErrUserNotFound
 	}
 	return users[0], nil
 }
 
-func ReadUsers(rows pgx.Rows) ([]*model2.User, error) {
+func ReadUsers(rows pgx.Rows) ([]*model.User, error) {
 	defer rows.Close()
-	var users []*model2.User
+	var users []*model.User
 
 	for rows.Next() {
-		user := &model2.User{}
+		user := &model.User{}
 
 		if err := rows.Scan(
 			&user.ID,
+			&user.UserName,
 		); err != nil {
-			return nil, errors.Wrap(err, model2.ErrScanSqlRow.Error())
+			return nil, errors.Wrap(err, model.ErrScanSqlRow.Error())
 		}
 
 		users = append(users, user)
@@ -128,6 +146,7 @@ func (r *Repository) GetChatConflict(adminID, userID int64) (int, bool, error) {
 		chatNumber int
 		chatStart  bool
 	)
+
 	err := r.Pool.QueryRow(r.ctx, `
 SELECT chat_number,chat_start 
 FROM middleware.anonymous_chat 
@@ -187,7 +206,7 @@ func (r *Repository) GetChatNumber(userID, adminID int64) (int, error) {
 }
 
 func (r *Repository) AddMessageFromUser(message string, userID int64, chatNumber int) error {
-	_, err := r.Pool.Exec(r.ctx, "INSERT INTO middleware.messages (user_message,chat_number,user_id) VALUES ($1,$2,$3)", message, chatNumber, userID)
+	_, err := r.Pool.Exec(r.ctx, "UPDATE middleware.messages SET user_message = $1 WHERE chat_number AND user_id) VALUES ($1,$2,$3)", message, chatNumber, userID)
 	if err != nil {
 		return errors.Wrap(err, "failed to add message from user")
 	}
@@ -205,12 +224,32 @@ func (r *Repository) AddPhotoMessageFromUser(photoMessage string, message string
 }
 
 func (r *Repository) AddMessageFromAdmin(message string, adminID int64, chatNumber int) error {
-	_, err := r.Pool.Exec(r.ctx, "INSERT INTO middleware.messages (admin_message,chat_number,admin_id) VALUES ($1,$2,$3)", message, chatNumber, adminID)
+	_, err := r.Pool.Exec(r.ctx, "UPDATE middleware.messages SET admin_message = $1 WHERE chat_number AND admin_id) VALUES ($1,$2,$3)", message, chatNumber, adminID)
 	if err != nil {
 		return errors.Wrap(err, "failed to add message from admin")
 	}
 
 	return nil
+}
+
+func (r *Repository) GetLastMessageFromUser(userID int64, chatNumber int) (string, error) {
+	var userMessage string
+	err := r.Pool.QueryRow(r.ctx, "SELECT user_message FROM middleware.message WHERE user_id = $1 AND chatNumber = $2", userID, chatNumber).Scan(&userMessage)
+	if err != nil {
+		return "", err
+	}
+
+	return userMessage, nil
+}
+
+func (r *Repository) GetLastMessageFromAdmin(adminID int64, chatNumber int) (string, error) {
+	var adminMessage string
+	err := r.Pool.QueryRow(r.ctx, "SELECT admin_message FROM middleware.message WHERE admin_id = $1 AND chatNumber = $2", adminID, chatNumber).Scan(&adminMessage)
+	if err != nil {
+		return "", err
+	}
+
+	return adminMessage, nil
 }
 
 func (r *Repository) AddPhotoMessageFromAdmin(photoMessage string, message string, adminID int64, chatNumber int) error {

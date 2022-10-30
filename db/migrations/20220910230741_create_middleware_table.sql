@@ -4,7 +4,8 @@ CREATE SCHEMA IF NOT EXISTS middleware;
 
 CREATE TABLE IF NOT EXISTS middleware.users
 (
-    id bigint UNIQUE
+    id        bigint UNIQUE,
+    user_name text
 );
 
 CREATE TABLE IF NOT EXISTS middleware.anonymous_chat

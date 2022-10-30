@@ -63,11 +63,6 @@ func InitConfig() (*Config, string, error) {
 		BotLink: vp.GetString("tg_config.0.0.link"),
 		Token:   vp.GetString("tg_config.0.0.token"),
 	},
-		{
-			BotLang: vp.GetString("tg_config.1.1.bot_lang"),
-			BotLink: vp.GetString("tg_config.1.1.link"),
-			Token:   vp.GetString("tg_config.1.1.token"),
-		},
 	}
 
 	config.Server = &Server{

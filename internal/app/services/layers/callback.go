@@ -20,6 +20,7 @@ func (h *CallBackHandlers) Init() {
 	h.OnCommand("/start_chat", h.BotService.StartChat)
 	h.OnCommand("/chat_delete", h.BotService.DeleteChat)
 	h.OnCommand("/chat_number", h.BotService.SelectChat)
+	h.OnCommand("/set_list", h.BotService.SetListChats)
 }
 
 func (h *CallBackHandlers) OnCommand(command string, handler model.Handler) {

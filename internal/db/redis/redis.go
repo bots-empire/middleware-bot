@@ -8,15 +8,15 @@ import (
 )
 
 var (
-	redisDefaultAddr = "cache:6379"
+	redisDefaultAddr = "redis:6379"
 	emptyLevelName   = "empty"
 )
 
 func StartRedis() *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisDefaultAddr,
-		Password: "eYVX7EwVmmxKPCDmwMtyKVge8oLd2t81", // no password set
-		DB:       0,                                  // use default DB
+		Password: "", // no password set
+		DB:       0,  // use default DB
 	})
 	return rdb
 }

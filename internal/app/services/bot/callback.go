@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/BlackRRR/middleware-bot/internal/app/model"
 	"github.com/BlackRRR/middleware-bot/internal/db/redis"
 	"github.com/bots-empire/base-bot/msgs"
@@ -22,35 +23,61 @@ const (
 )
 
 func (b *BotService) CallAdmin(s *model.Situation) error {
-	adminIDs, err := b.getAdmins(s.BotLang)
-	if err != nil {
-		return err
-	}
-
+	//get info
 	info, err := b.getIncomeInfo(s.User.ID)
 	if err != nil {
 		return err
 	}
 
+	var adminIDs []int64
+
+	if info == nil {
+		req := &model.GetAdmins{
+			Code: Sup,
+		}
+
+		//get all admins
+		adminIDs, err = b.getAdmins(req)
+		if err != nil {
+			return err
+		}
+	} else {
+		req := &model.GetAdmins{
+			Code:       Sup,
+			Additional: []string{info.BotName},
+		}
+
+		fmt.Println(info.BotName)
+
+		//get current bot name admins
+		adminIDs, err = b.getAdmins(req)
+		if err != nil {
+			return err
+		}
+	}
+
 	if adminIDs == nil {
-		text := b.GlobalBot.LangText(s.BotLang, "no_admins", s.CallbackQuery.From.UserName)
+		//no admins in set
+		text := b.GlobalBot.LangText(s.BotLang, "no_admins", s.User.UserName)
 		return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
 	}
 
-	for _, id := range adminIDs {
+	for _, adminID := range adminIDs {
 		var (
 			text   string
 			markUp tgbotapi.InlineKeyboardMarkup
 		)
 		if info == nil {
-			text = b.GlobalBot.LangText(s.BotLang, "write_answer_null", s.CallbackQuery.From.UserName)
+			//user unknown
+			text = b.GlobalBot.LangText(s.BotLang, "write_answer_null", s.User.UserName)
 			markUp = msgs.NewIlMarkUp(msgs.NewIlRow(
 				msgs.NewIlDataButton("start_chat_with_user",
 					"/start_chat?"+strconv.FormatInt(s.User.ID, 10)))).Build(b.GlobalBot.Language[s.BotLang])
 
 		} else {
+			//user known
 			text = b.GlobalBot.LangText(s.BotLang, "write_answer",
-				s.CallbackQuery.From.UserName,
+				s.User.UserName,
 				info.IncomeSource,
 				info.BotName,
 				info.TypeBot,
@@ -61,7 +88,7 @@ func (b *BotService) CallAdmin(s *model.Situation) error {
 
 		}
 
-		err := b.BaseBotSrv.NewParseMarkUpMessage(id, markUp, text)
+		err := b.BaseBotSrv.NewParseMarkUpMessage(adminID, markUp, text)
 		if err != nil {
 			return err
 		}
@@ -77,12 +104,255 @@ func (b *BotService) CallAdmin(s *model.Situation) error {
 	return nil
 }
 
-func (b *BotService) getAdmins(botLang string) ([]int64, error) {
-	req := &model.GetAdmins{
-		Code:       Sup,
-		Additional: []string{botLang},
+func (b *BotService) StartChat(s *model.Situation) error {
+	userID := strings.Split(s.CallbackQuery.Data, "?")[1]
+	userFormatID, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return err
+	}
+	adminID := s.User.ID
+
+	chatStarts, err := b.Repo.CheckStartedChatsUser(userFormatID)
+	if err != nil {
+		return err
 	}
 
+	//check if chat exists with different sup
+	for _, val := range chatStarts {
+		if val {
+			text := b.GlobalBot.LangText(s.BotLang, "different_admin")
+			err := b.BaseBotSrv.NewParseMessage(adminID, text)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	//set what chat was started with sup
+	err = b.Repo.ChangeStartChat(adminID, userFormatID, true)
+	if err != nil {
+		return err
+	}
+
+	chatNuM, err := b.Repo.GetChatNumber(userFormatID, adminID)
+	if err != nil {
+		return err
+	}
+
+	text := b.GlobalBot.LangText(s.BotLang, "write_answer_to_user", chatNuM)
+
+	//set connection for admin with user
+	redis.RdbSetUser(adminID, "/answer?"+userID)
+
+	msg := tgbotapi.NewMessage(adminID, text)
+	msg.ReplyMarkup = createMainMenu().Build(b.GlobalBot.Language[s.BotLang])
+
+	//send to admin what chat was started and show menu
+	err = b.BaseBotSrv.SendMsgToUser(msg, adminID)
+	if err != nil {
+		return err
+	}
+
+	text = b.GlobalBot.LangText(s.BotLang, "chat_started_user")
+
+	//set connection for user with admin
+	redis.RdbSetUser(userFormatID, "/question_to_admin?"+strconv.FormatInt(+adminID, 10))
+
+	// send to user what chat was started
+	return b.BaseBotSrv.NewParseMessage(userFormatID, text)
+}
+
+func (b *BotService) SelectChat(s *model.Situation) error {
+	chatNumber := strings.Split(s.CallbackQuery.Data, "?")[1]
+	chatNumInt, err := strconv.Atoi(chatNumber)
+	if err != nil {
+		return err
+	}
+
+	userID, err := b.Repo.GetUserIDChat(chatNumInt)
+	if err != nil {
+		return err
+	}
+
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	redis.RdbSetUser(s.User.ID, "/answer?"+userIDStr)
+
+	text := b.GlobalBot.LangText(s.BotLang, "chat_selected", chatNumber)
+
+	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+}
+
+func (b *BotService) DeleteChat(s *model.Situation) error {
+	data := strings.Split(s.CallbackQuery.Data, "?")[1]
+	chatNumber, err := strconv.Atoi(data)
+	if err != nil {
+		return err
+	}
+	err = b.Repo.StopChat(chatNumber)
+	if err != nil {
+		return err
+	}
+
+	userID, err := b.Repo.GetUserIDChat(chatNumber)
+	if err != nil {
+		return err
+	}
+
+	redis.RdbSetUser(userID, "main")
+	redis.RdbSetUser(s.User.ID, "main")
+
+	text := b.GlobalBot.LangText(s.BotLang, "chat_ended_user")
+
+	err = b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+	if err != nil {
+		return err
+	}
+
+	text = b.GlobalBot.LangText(s.BotLang, "chat_deleted", chatNumber)
+
+	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+}
+
+func (b *BotService) ChatInfo(s *model.Situation) error {
+	chatNumber := strings.Split(s.CallbackQuery.Data, "?")[1]
+	formatChatNumber, err := strconv.Atoi(chatNumber)
+	if err != nil {
+		return err
+	}
+
+	userID, err := b.Repo.GetUserIDChat(formatChatNumber)
+	if err != nil {
+		return err
+	}
+
+	info, err := b.getIncomeInfo(userID)
+	if err != nil {
+		return err
+	}
+
+	if info == nil {
+		text := b.GlobalBot.LangText(s.BotLang, "user_info_unknown", chatNumber, userID)
+		return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+	}
+
+	lastMessageFromUser, err := b.Repo.GetLastMessageFromUser(userID, formatChatNumber)
+	if err != nil {
+		return err
+	}
+
+	lastMessageFromAdmin, err := b.Repo.GetLastMessageFromAdmin(userID, formatChatNumber)
+	if err != nil {
+		return err
+	}
+
+	userName, err := b.Repo.GetUserName(userID)
+	if err != nil {
+		return err
+	}
+
+	//todo:name after userID
+	text := b.GlobalBot.LangText(s.BotLang, "user_info",
+		chatNumber,
+		userID,
+		userName,
+		s.User.UserName,
+		info.IncomeSource,
+		info.BotName,
+		info.TypeBot,
+		info.BotLink,
+		lastMessageFromUser,
+		lastMessageFromAdmin)
+
+	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+}
+
+func (b *BotService) SetListChats(s *model.Situation) error {
+	needList := strings.Split(s.CallbackQuery.Data, "?")[1]
+	action := strings.Split(s.CallbackQuery.Data, "?")[2]
+	formatNeedList, err := strconv.Atoi(needList)
+	if err != nil {
+		return err
+	}
+
+	chats, err := b.Repo.GetChatNumberWhereLiveChat(s.User.ID, true)
+	if err != nil {
+		return err
+	}
+
+	var (
+		markUp      tgbotapi.InlineKeyboardMarkup
+		buttons     []tgbotapi.InlineKeyboardButton
+		rows        [][]tgbotapi.InlineKeyboardButton
+		wideCount   int
+		heightCount int
+		listNum     int
+	)
+
+	for _, val := range chats {
+		if heightCount == 0 {
+			return b.BaseBotSrv.SendAnswerCallback(s.CallbackQuery, "lower_than_1")
+		}
+
+		if listNum == formatNeedList {
+			wideCount += 1
+			button := b.getChatNumberButton(s.BotLang, val, "number")
+
+			buttons = append(buttons, button)
+
+			if heightCount == lengthInHeight {
+				prevAndNextButtons := b.getPrevAndNextButtons(s.BotLang, listNum, action)
+
+				rows = append(rows, prevAndNextButtons)
+				markUp.InlineKeyboard = rows
+
+				text := b.GlobalBot.LangText(s.BotLang, "live_chats")
+				return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &markUp, text)
+			}
+
+			if wideCount == lengthInWide {
+				wideCount = 0
+				heightCount += 1
+				rows = append(rows, buttons)
+			}
+		}
+
+		wideCount += 1
+		if heightCount == lengthInHeight {
+			listNum += 1
+			heightCount = 0
+		}
+
+		if wideCount == lengthInWide {
+			wideCount = 0
+			heightCount += 1
+		}
+	}
+
+	if listNum != formatNeedList {
+		return b.BaseBotSrv.SendAnswerCallback(s.CallbackQuery, "no_more_lists")
+	}
+
+	if rows == nil {
+		rows = append(rows, buttons)
+	}
+
+	prevAndNextButtons := b.getPrevAndNextButtons(s.BotLang, listNum, action)
+	rows = append(rows, prevAndNextButtons)
+	markUp.InlineKeyboard = rows
+
+	text := b.GlobalBot.LangText(s.BotLang, "live_chats")
+	return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &markUp, text)
+}
+
+func createMainMenu() msgs.MarkUp {
+	return msgs.NewMarkUp(
+		msgs.NewRow(msgs.NewDataButton("live_chats")),
+		msgs.NewRow(msgs.NewDataButton("delete_chats")),
+		msgs.NewRow(msgs.NewDataButton("chat_info")))
+}
+
+func (b *BotService) getAdmins(req *model.GetAdmins) ([]int64, error) {
 	marshal, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -152,136 +422,33 @@ func (b *BotService) getIncomeInfo(userID int64) (*model.IncomeInfo, error) {
 	return info, nil
 }
 
-func (b *BotService) StartChat(s *model.Situation) error {
-	userID := strings.Split(s.CallbackQuery.Data, "?")[1]
-	formatID, err := strconv.ParseInt(userID, 10, 64)
-	if err != nil {
-		return err
+func (b *BotService) getPrevAndNextButtons(botLang string, listNum int, action string) []tgbotapi.InlineKeyboardButton {
+	var prevAndNextButtons []tgbotapi.InlineKeyboardButton
+	// button prev list
+	data := "/set_list?" + strconv.Itoa(listNum-1) + "?" + action
+	button := tgbotapi.InlineKeyboardButton{
+		Text:         b.GlobalBot.LangText(botLang, "prev"),
+		CallbackData: &data,
 	}
+	prevAndNextButtons = append(prevAndNextButtons, button)
 
-	chatNum, started, err := b.Repo.GetChatConflict(s.CallbackQuery.From.ID, formatID)
-	if err != nil {
-		return err
+	//button next list
+	data = "/set_list?" + strconv.Itoa(listNum+1) + "?" + action
+	button = tgbotapi.InlineKeyboardButton{
+		Text:         b.GlobalBot.LangText(botLang, "next"),
+		CallbackData: &data,
 	}
+	prevAndNextButtons = append(prevAndNextButtons, button)
 
-	if chatNum != 0 && started {
-		text := b.GlobalBot.LangText(s.BotLang, "different_admin")
-
-		return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-	}
-
-	chatStarts, err := b.Repo.CheckStartedChatsUser(formatID)
-	if err != nil {
-		return err
-	}
-
-	for _, val := range chatStarts {
-		if val {
-			text := b.GlobalBot.LangText(s.BotLang, "different_admin")
-			err := b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	err = b.Repo.ChangeStartChat(s.CallbackQuery.From.ID, formatID, true)
-	if err != nil {
-		return err
-	}
-
-	chatNuM, _, err := b.Repo.GetChatConflict(s.CallbackQuery.From.ID, formatID)
-	if err != nil {
-		return err
-	}
-
-	text := b.GlobalBot.LangText(s.BotLang, "write_answer_to_user", chatNuM)
-
-	redis.RdbSetUser(s.User.ID, "/answer?"+userID)
-
-	msg := tgbotapi.NewMessage(s.User.ID, text)
-	msg.ReplyMarkup = createMainMenu().Build(b.GlobalBot.Language[s.BotLang])
-
-	err = b.BaseBotSrv.SendMsgToUser(msg, s.User.ID)
-	if err != nil {
-		return err
-	}
-
-	text = b.GlobalBot.LangText(s.BotLang, "chat_started_user")
-	data := strings.Split(s.CallbackQuery.Data, "?")[1]
-
-	id, err := strconv.ParseInt(data, 10, 64)
-	if err != nil {
-		return err
-	}
-	redis.RdbSetUser(formatID, "/question_to_admin?"+strconv.FormatInt(+s.User.ID, 10))
-
-	if chatNum != 0 && !started {
-		err := b.Repo.ResumeChat(chatNum)
-		if err != nil {
-			return err
-		}
-
-		return b.BaseBotSrv.NewParseMessage(id, text)
-	}
-
-	return b.BaseBotSrv.NewParseMessage(id, text)
+	return prevAndNextButtons
 }
 
-func (b *BotService) SelectChat(s *model.Situation) error {
-	chatNumber := strings.Split(s.CallbackQuery.Data, "?")[1]
-	chatNumInt, err := strconv.Atoi(chatNumber)
-	if err != nil {
-		return err
+func (b *BotService) getChatNumberButton(botLang string, val int, action string) tgbotapi.InlineKeyboardButton {
+	data := "/chat_" + action + "?" + strconv.Itoa(val)
+	button := tgbotapi.InlineKeyboardButton{
+		Text:         b.GlobalBot.LangText(botLang, "chat_number", val),
+		CallbackData: &data,
 	}
 
-	userID, err := b.Repo.GetUserIDChat(chatNumInt)
-	if err != nil {
-		return err
-	}
-
-	userIDStr := strconv.FormatInt(userID, 10)
-
-	redis.RdbSetUser(s.User.ID, "/answer?"+userIDStr)
-
-	text := b.GlobalBot.LangText(s.BotLang, "chat_selected", chatNumber)
-
-	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-}
-
-func (b *BotService) DeleteChat(s *model.Situation) error {
-	data := strings.Split(s.CallbackQuery.Data, "?")[1]
-	chatNumber, err := strconv.Atoi(data)
-	if err != nil {
-		return err
-	}
-	err = b.Repo.StopChat(chatNumber)
-	if err != nil {
-		return err
-	}
-
-	userID, err := b.Repo.GetUserIDChat(chatNumber)
-	if err != nil {
-		return err
-	}
-
-	redis.RdbSetUser(userID, "main")
-	redis.RdbSetUser(s.User.ID, "main")
-
-	text := b.GlobalBot.LangText(s.BotLang, "chat_ended_user")
-
-	err = b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-	if err != nil {
-		return err
-	}
-
-	text = b.GlobalBot.LangText(s.BotLang, "chat_deleted", chatNumber)
-
-	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-}
-
-func createMainMenu() msgs.MarkUp {
-	return msgs.NewMarkUp(
-		msgs.NewRow(msgs.NewDataButton("live_chats")),
-		msgs.NewRow(msgs.NewDataButton("delete_chats")))
+	return button
 }
