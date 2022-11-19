@@ -21,6 +21,7 @@ func InitServices(repo *repository.Repository, msgsSrv *msgs.Service, globalBot 
 
 	globalBot.MessageHandler = newMessagesHandler(botSrv)
 	globalBot.CallbackHandler = newCallbackHandler(botSrv)
+	globalBot.AdminHandler = newAdminHandler(botSrv)
 
 	startBot(globalBot)
 	model.UploadUpdateStatistic()
@@ -57,6 +58,16 @@ func newMessagesHandler(botService *bot.BotService) *layers.MessagesHandlers {
 
 func newCallbackHandler(botService *bot.BotService) *layers.CallBackHandlers {
 	handle := layers.CallBackHandlers{
+		Handlers:   map[string]model.Handler{},
+		BotService: botService,
+	}
+
+	handle.Init()
+	return &handle
+}
+
+func newAdminHandler(botService *bot.BotService) *layers.AdminHandlers {
+	handle := layers.AdminHandlers{
 		Handlers:   map[string]model.Handler{},
 		BotService: botService,
 	}

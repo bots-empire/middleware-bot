@@ -32,6 +32,7 @@ type GlobalBot struct {
 
 	MessageHandler  GlobalHandlers
 	CallbackHandler GlobalHandlers
+	AdminHandler    GlobalHandlers
 
 	Commands map[string]string
 	Language map[string]map[string]string

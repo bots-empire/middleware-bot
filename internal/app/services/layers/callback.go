@@ -21,6 +21,8 @@ func (h *CallBackHandlers) Init() {
 	h.OnCommand("/chat_delete", h.BotService.DeleteChat)
 	h.OnCommand("/chat_number", h.BotService.SelectChat)
 	h.OnCommand("/set_list", h.BotService.SetListChats)
+	h.OnCommand("/chat_lists", h.BotService.ChatInfo)
+	h.OnCommand("/set_note", h.BotService.SetNotes)
 }
 
 func (h *CallBackHandlers) OnCommand(command string, handler model.Handler) {

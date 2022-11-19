@@ -18,7 +18,7 @@ import (
 var (
 	panicLogger = log.NewDefaultLogger().Prefix("panic cather")
 
-	updatePrintHeader = "updates number: %d    // referral-bot-updates:  %s %s"
+	updatePrintHeader = "updates number: %d    // middleware-bot-updates:  %s %s"
 	extraneousUpdate  = "extraneous updates"
 )
 
@@ -34,7 +34,18 @@ func NewBotService(repo *repository.Repository, msgsSrv *msgs.Service, bot *mode
 }
 
 func (b *BotService) checkCallbackQuery(s *model.Situation, logger log.Logger) {
-	Handler := b.GlobalBot.CallbackHandler.
+	Handler := b.GlobalBot.AdminHandler.
+		GetHandler(s.Command)
+
+	if Handler != nil {
+		if err := Handler(s); err != nil {
+			logger.Warn("error with serve admin callback command: %s", err.Error())
+			b.smthWentWrong(s.CallbackQuery.Message.Chat.ID, b.GlobalBot.BotLang)
+		}
+		return
+	}
+
+	Handler = b.GlobalBot.CallbackHandler.
 		GetHandler(s.Command)
 
 	if Handler != nil {
@@ -166,6 +177,26 @@ func (b *BotService) checkMessage(situation *model.Situation, logger log.Logger,
 	if situation.Command == "" {
 		situation.Command, situation.Err = b.GlobalBot.GetCommandFromText(
 			situation.Message, b.GlobalBot.BotLang, situation.User.ID)
+	}
+
+	if situation.Err == nil {
+		handler := b.GlobalBot.AdminHandler.
+			GetHandler(situation.Command)
+
+		if handler != nil {
+			sortCentre.ServeHandler(handler, situation, func(err error) {
+				text := fmt.Sprintf("%s // %s // error with serve admin msg command: %s",
+					b.GlobalBot.BotLang,
+					b.GlobalBot.BotLink,
+					err.Error(),
+				)
+				b.BaseBotSrv.SendNotificationToDeveloper(text, false)
+
+				logger.Warn(text)
+				b.smthWentWrong(situation.Message.Chat.ID, b.GlobalBot.BotLang)
+			})
+			return
+		}
 	}
 
 	if situation.Err == nil {

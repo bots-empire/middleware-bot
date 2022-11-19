@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -121,20 +122,25 @@ func (b *BotService) StartChat(s *model.Situation) error {
 	for _, val := range chatStarts {
 		if val {
 			text := b.GlobalBot.LangText(s.BotLang, "different_admin")
-			err := b.BaseBotSrv.NewParseMessage(adminID, text)
-			if err != nil {
-				return err
-			}
+			return b.BaseBotSrv.NewParseMessage(adminID, text)
 		}
 	}
 
 	//set what chat was started with sup
-	err = b.Repo.ChangeStartChat(adminID, userFormatID, true)
+	chat := &model.AnonymousChat{
+		AdminId:         adminID,
+		UserId:          userFormatID,
+		Note:            " ",
+		ChatStart:       true,
+		LastMessageTime: time.Now(),
+	}
+
+	err = b.Repo.ChangeStartChat(chat)
 	if err != nil {
 		return err
 	}
 
-	chatNuM, err := b.Repo.GetChatNumber(userFormatID, adminID)
+	chatNuM, err := b.Repo.GetChatNumberWhereLiveChatUser(adminID, userFormatID, true)
 	if err != nil {
 		return err
 	}
@@ -231,40 +237,64 @@ func (b *BotService) ChatInfo(s *model.Situation) error {
 		return err
 	}
 
-	if info == nil {
-		text := b.GlobalBot.LangText(s.BotLang, "user_info_unknown", chatNumber, userID)
-		return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
-	}
-
-	lastMessageFromUser, err := b.Repo.GetLastMessageFromUser(userID, formatChatNumber)
+	note, err := b.Repo.GetUserNote(formatChatNumber)
 	if err != nil {
 		return err
 	}
 
-	lastMessageFromAdmin, err := b.Repo.GetLastMessageFromAdmin(userID, formatChatNumber)
-	if err != nil {
-		return err
+	if note == " " || note == "" {
+		note = b.GlobalBot.LangText(s.BotLang, "write_note")
 	}
+
+	markUp := msgs.NewIlMarkUp(msgs.NewIlRow(msgs.NewIlDataButton("new_note", "/set_note?"+chatNumber))).Build(b.GlobalBot.Language[s.BotLang])
+
+	//lastMessageFromUser, err := b.Repo.GetLastMessageFromUser(userID, formatChatNumber)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//lastMessageFromAdmin, err := b.Repo.GetLastMessageFromAdmin(userID, formatChatNumber)
+	//if err != nil {
+	//	return err
+	//}
 
 	userName, err := b.Repo.GetUserName(userID)
 	if err != nil {
 		return err
 	}
 
-	//todo:name after userID
+	if info == nil {
+		text := b.GlobalBot.LangText(s.BotLang, "user_info_unknown",
+			chatNumber,
+			userID,
+			userName,
+			note)
+		return b.BaseBotSrv.NewParseMarkUpMessage(s.User.ID, &markUp, text)
+	}
+
 	text := b.GlobalBot.LangText(s.BotLang, "user_info",
 		chatNumber,
 		userID,
 		userName,
-		s.User.UserName,
 		info.IncomeSource,
 		info.BotName,
 		info.TypeBot,
 		info.BotLink,
-		lastMessageFromUser,
-		lastMessageFromAdmin)
+		note)
 
-	return b.BaseBotSrv.NewParseMessage(s.User.ID, text)
+	return b.BaseBotSrv.NewParseMarkUpMessage(s.User.ID, &markUp, text)
+
+}
+
+func (b *BotService) SetNotes(s *model.Situation) error {
+	data := strings.Split(s.CallbackQuery.Data, "?")[1]
+	level := redis.GetLevel(s.User.ID)
+	userID := strings.Split(level, "?")[1]
+	redis.RdbSetMessageID(s.User.ID, s.CallbackQuery.Message.MessageID)
+
+	redis.RdbSetUser(s.User.ID, "/set_note_msg?"+data+"?"+userID)
+
+	return b.BaseBotSrv.NewParseMessage(s.User.ID, b.GlobalBot.LangText(s.BotLang, "set_new_note"))
 }
 
 func (b *BotService) SetListChats(s *model.Situation) error {
@@ -275,19 +305,22 @@ func (b *BotService) SetListChats(s *model.Situation) error {
 		return err
 	}
 
-	chats, err := b.Repo.GetChatNumberWhereLiveChat(s.User.ID, true)
+	chats, err := b.Repo.GetChatNumberAndTimeWhereLiveChat(s.User.ID, true)
 	if err != nil {
 		return err
 	}
 
 	var (
-		markUp      tgbotapi.InlineKeyboardMarkup
-		buttons     []tgbotapi.InlineKeyboardButton
-		rows        [][]tgbotapi.InlineKeyboardButton
-		wideCount   int
-		heightCount int
-		listNum     int
+		inlineMarkUp tgbotapi.InlineKeyboardMarkup
+		buttons      []tgbotapi.InlineKeyboardButton
+		wideCount    int
+		heightCount  int
+		listNum      int
 	)
+
+	if inlineMarkUp.InlineKeyboard == nil {
+		inlineMarkUp.InlineKeyboard = make([][]tgbotapi.InlineKeyboardButton, 0)
+	}
 
 	for _, val := range chats {
 		if heightCount == 0 {
@@ -296,24 +329,23 @@ func (b *BotService) SetListChats(s *model.Situation) error {
 
 		if listNum == formatNeedList {
 			wideCount += 1
-			button := b.getChatNumberButton(s.BotLang, val, "number")
+			button := b.getChatNumberButton(s.BotLang, val.ChatNumber, "number")
 
 			buttons = append(buttons, button)
 
 			if heightCount == lengthInHeight {
 				prevAndNextButtons := b.getPrevAndNextButtons(s.BotLang, listNum, action)
 
-				rows = append(rows, prevAndNextButtons)
-				markUp.InlineKeyboard = rows
+				inlineMarkUp.InlineKeyboard = append(inlineMarkUp.InlineKeyboard, prevAndNextButtons)
 
-				text := b.GlobalBot.LangText(s.BotLang, "live_chats")
-				return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &markUp, text)
+				text := b.GlobalBot.LangText(s.BotLang, "live_"+action)
+				return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &inlineMarkUp, text)
 			}
 
 			if wideCount == lengthInWide {
 				wideCount = 0
 				heightCount += 1
-				rows = append(rows, buttons)
+				inlineMarkUp.InlineKeyboard = append(inlineMarkUp.InlineKeyboard, buttons)
 			}
 		}
 
@@ -333,16 +365,16 @@ func (b *BotService) SetListChats(s *model.Situation) error {
 		return b.BaseBotSrv.SendAnswerCallback(s.CallbackQuery, "no_more_lists")
 	}
 
-	if rows == nil {
-		rows = append(rows, buttons)
+	if inlineMarkUp.InlineKeyboard == nil {
+		inlineMarkUp.InlineKeyboard = append(inlineMarkUp.InlineKeyboard, buttons)
 	}
 
 	prevAndNextButtons := b.getPrevAndNextButtons(s.BotLang, listNum, action)
-	rows = append(rows, prevAndNextButtons)
-	markUp.InlineKeyboard = rows
 
-	text := b.GlobalBot.LangText(s.BotLang, "live_chats")
-	return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &markUp, text)
+	inlineMarkUp.InlineKeyboard = append(inlineMarkUp.InlineKeyboard, prevAndNextButtons)
+
+	text := b.GlobalBot.LangText(s.BotLang, "live_"+action)
+	return b.BaseBotSrv.NewEditMarkUpMessage(s.User.ID, s.CallbackQuery.Message.MessageID, &inlineMarkUp, text)
 }
 
 func createMainMenu() msgs.MarkUp {

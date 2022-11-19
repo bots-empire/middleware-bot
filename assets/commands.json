@@ -4,7 +4,8 @@
   "live_chats": "/live_chats",
   "delete_chats": "/delete_chats",
   "chat_info": "/chat_info",
+  "/admin": "/admin",
 
-  "task_description" : "/task_description",
+  "task_description": "/task_description",
   "back_to_main_menu_button": "/start"
 }
