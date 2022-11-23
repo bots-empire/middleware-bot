@@ -248,9 +248,22 @@ func (b *BotService) SetNote(s *model.Situation) error {
 }
 
 func (b *BotService) firstList(s *model.Situation, action string) error {
-	chats, err := b.Repo.GetChatNumberAndTimeWhereLiveChat(s.User.ID, true)
-	if err != nil {
-		return err
+	var chats []*model.AnonymousChat
+	if action == "admin" {
+		chat, err := b.Repo.GetChatNumberWhereLiveChat(true)
+		if err != nil {
+			return err
+		}
+
+		chats = chat
+
+	} else {
+		chat, err := b.Repo.GetChatNumberAndTimeWhereLiveChat(s.User.ID, true)
+		if err != nil {
+			return err
+		}
+
+		chats = chat
 	}
 
 	var (

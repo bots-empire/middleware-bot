@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
+	"strings"
 	"time"
 )
 
@@ -54,7 +55,10 @@ func (r *Repository) GetUserName(userID int64) (string, error) {
 	var userName string
 	err := r.Pool.QueryRow(r.ctx, "SELECT user_name FROM middleware.users WHERE id = $1", userID).Scan(&userName)
 	if err != nil {
-		return "", err
+		if strings.Contains(err.Error(), "no rows in result set") {
+			return "", nil
+		}
+		return "", errors.Wrap(err, "failed to get userName")
 	}
 
 	return userName, nil
@@ -356,6 +360,25 @@ SELECT chat_number,last_message_time FROM middleware.anonymous_chat
                    WHERE admin_id = $1 AND chat_start = $2
                    ORDER BY last_message_time ASC`,
 		adminID,
+		chatLive)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get chat number where live chat")
+	}
+
+	readRows, err := r.readRowsModelsAnonymousChat(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	rows.Close()
+	return readRows, nil
+}
+
+func (r *Repository) GetChatNumberWhereLiveChat(chatLive bool) ([]*model.AnonymousChat, error) {
+	rows, err := r.Pool.Query(r.ctx, `
+SELECT chat_number,last_message_time FROM middleware.anonymous_chat
+                   WHERE chat_start = $1
+                   ORDER BY last_message_time ASC`,
 		chatLive)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get chat number where live chat")
